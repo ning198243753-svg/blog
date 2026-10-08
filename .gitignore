@@ -1,0 +1,57 @@
+# 依赖
+node_modules/
+.pnpm-store/
+jupyter_modules/
+
+# 构建产物
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+public/build/
+*.tsbuildinfo
+
+# 缓存
+.cache/
+.temp/
+.tmp/
+.eslintcache
+.parcel-cache/
+.vite/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 编辑器与系统
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 内容草稿（如需版本管理请删除此行）
+# drafts/
