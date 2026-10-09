@@ -1,0 +1,51 @@
+# ============================================================
+# 构建上下文排除清单（前端）
+#
+# 【这个文件在这里格外重要】
+# node_modules 是本项目里最大的目录（通常几百 MB、几万个文件）。
+# 不排除它的话，每次 docker build 都要把它打包发给 Docker 守护进程 ——
+# 在 3Mbps 的服务器上这一步可能要十几分钟，
+# 而容器里本来就会重新 pnpm install，拷进去完全无用。
+#
+# 顺带一提：node_modules 里还含有平台相关的二进制（如 esbuild），
+# 从 Windows 拷进 Linux 容器会直接导致构建失败。
+# ============================================================
+
+# ---- 依赖 ----
+node_modules/
+.pnpm-store/
+
+# ---- 构建产物 ----
+# 容器里会重新构建，本地产物拷进去只会造成「用的是哪一份」的混淆。
+dist/
+build/
+out/
+*.tsbuildinfo
+.vite/
+
+# ---- 测试产物与截图 ----
+test-results/
+playwright-report/
+e2e-*.mjs
+
+# ---- 环境变量 ----
+.env
+.env.*
+!.env.example
+
+# ---- 编辑器与系统 ----
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- 日志 ----
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ---- 文档 ----
+*.md

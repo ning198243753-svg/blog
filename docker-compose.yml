@@ -1,0 +1,188 @@
+# ============================================================
+# Docker Compose —— 单机部署（4 核 / 4G 内存 / 3Mbps）
+#
+# 【架构：三个服务，只有 Nginx 对外暴露】
+#
+#   Internet
+#      │  :80 :443
+#      ▼
+#   ┌─────────┐
+#   │  nginx  │  静态文件 / API 转发 / 上传图片 / HTTPS 终止
+#   └────┬────┘
+#        │ 内网 :8000（不对外发布）
+#        ▼
+#   ┌─────────┐
+#   │ backend │  FastAPI + Uvicorn
+#   └────┬────┘
+#        │
+#        ▼
+#   ┌─────────┐
+#   │  data   │  卷：SQLite 数据库 + 上传图片 + 日志
+#   └─────────┘
+#
+# 【为什么 backend 不写 ports】
+# 写了 "8000:8000" 就等于把 FastAPI 直接暴露到公网。
+# 那样会绕过 Nginx 的三件事：HTTPS、限流、以及
+# X-Forwarded-* 头的可信来源判断（见 backend/Dockerfile 的说明）。
+# 容器之间通过服务名互通，不需要端口映射。
+# ============================================================
+
+services:
+  # ----------------------------------------------------------
+  # 前端构建：一次性任务，产出 dist 后把文件拷进共享卷
+  #
+  # 【为什么用 profile 而不是让它常驻】
+  # 它的工作就是「构建完把文件复制走」，没有需要持续运行的进程。
+  # 用 profiles 让它默认不启动，只在部署时显式调用：
+  #     docker compose --profile build run --rm frontend-build
+  # 这样日常 `docker compose up -d` 不会重复构建前端
+  # （在 4G 内存的机器上，重复构建既慢又可能把内存打满）。
+  # ----------------------------------------------------------
+  frontend-build:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: blog-frontend-dist:latest
+    profiles: ["build"]
+    # 把构建产物拷进 nginx 读取的那个卷。
+    # 【为什么是「拷」而不是让 nginx 直接挂载镜像里的目录】
+    # Nginx 需要的是运行时可读的文件系统路径，
+    # 而镜像里的文件在只读层，无法在容器间直接共享 ——
+    # 用卷传递是最直白的方式。
+    volumes:
+      - frontend_dist:/export
+    # 覆盖 Dockerfile 的 CMD：把 dist 复制到共享卷。
+    # 用 cp -r /dist/. 而不是 cp -r /dist/*：
+    # 后者漏掉隐藏文件，而且通配符在空目录时会报错。
+    command: ["sh", "-c", "rm -rf /export/* && cp -r /dist/. /export/ && echo '前端产物已导出' && ls -la /export/"]
+
+  # ----------------------------------------------------------
+  # 后端：FastAPI
+  # ----------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: blog-backend:latest
+    restart: unless-stopped
+    # 【为什么用 env_file 而不是 environment】
+    # SECRET_KEY 与 ADMIN_PASSWORD 是密钥，不该出现在
+    # compose 文件里（它会被提交进仓库）。
+    # .env 在 .gitignore 里，权限应设为 600。
+    env_file:
+      - ./backend/.env
+    # 【为什么这些值要显式覆盖 .env】
+    # .env 是给本地开发用的，里面的 DATABASE_URL 指向 ./data/db，
+    # 那是「相对当前工作目录」。而容器里的工作目录是 /app，
+    # 数据卷挂在 /data —— 两者对不上会导致：
+    # 应用以为在写数据卷，实际写进了容器可写层，
+    # 容器一重建数据就没了，而且不会有任何报错。
+    environment:
+      DATABASE_URL: sqlite:////data/db/blog.db
+      UPLOAD_DIR: /data/uploads
+      LOG_DIR: /data/logs
+      # 【COOKIE_SECURE 必须为 true】
+      # 生产走 HTTPS。设为 false 会让会话 Cookie 在没有
+      # Secure 标记的情况下传输 —— 任何一个 http 请求
+      # （比如用户手输 http://域名）都会明文带上它。
+      COOKIE_SECURE: "true"
+      DEBUG: "false"
+    volumes:
+      - blog_data:/data
+    # 【不发布端口】见文件顶部的说明。
+    # 需要临时调试时可以：
+    #   docker compose exec backend python -c "..."
+    # 或临时加 ports 并同时修改 --forwarded-allow-ips。
+    healthcheck:
+      # 【为什么用 python 而不是 curl】
+      # slim 镜像里没有 curl（也不该为健康检查装一个）。
+      # Python 是必然存在的。
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # 给应用留出启动时间：首次启动需要建表、迁移。
+      start_period: 30s
+    # 【这里刻意不写 depends_on】
+    #
+    # 最初写的是 depends_on: [nginx]，那是错的 —— nginx 需要
+    # backend 才能转发请求，backend 又反过来依赖 nginx，形成循环。
+    # 即使写成单向的，它也没有意义：
+    #
+    # depends_on 只保证「容器启动了」，不保证「服务能用了」。
+    # 而 Docker 的内置 DNS 会解析服务名，两者谁先起来都能互通 ——
+    # Nginx 在 backend 未就绪时返回 502，等 backend 起来后自动恢复。
+    #
+    # 真正需要「等依赖就绪」的场景要用 healthcheck +
+    # depends_on 的 condition: service_healthy，
+    # 但这里没有这个必要：短暂 502 不影响正确性，
+    # 而 restart: unless-stopped 会处理崩溃重启。
+    networks:
+      - blog_net
+
+  # ----------------------------------------------------------
+  # Nginx：唯一对外暴露的服务
+  # ----------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # 配置：只读挂载。容器里改配置不会生效，
+      # 必须改宿主机文件再 reload —— 这能避免
+      # 「容器里改了半天，重启后全丢了」。
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # 前端静态文件（由 frontend-build 写入）
+      - frontend_dist:/usr/share/nginx/html:ro
+      # 上传的图片：与 backend 共享同一个卷
+      - blog_data:/data:ro
+      # ACME 挑战目录与证书
+      - certbot_www:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - blog_net
+
+  # ----------------------------------------------------------
+  # Certbot：自动申请与续期 Let's Encrypt 证书
+  #
+  # 【为什么用它而不是宿主机上装 certbot】
+  # 宿主机不需要装任何东西 —— 这符合本项目「服务器只装 Docker」
+  # 的约束，也让「怎么部署」这件事只有一份可执行的描述。
+  # ----------------------------------------------------------
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["certbot"]
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    # 默认行为：续期。首次申请用命令行显式执行（见部署文档）。
+    # 【为什么续期不写在 entrypoint 里】
+    # 隐式的后台续期循环很难排查（失败时静默）。
+    # 用宿主机的 cron 或 systemd timer 显式调用，
+    # 每次执行都会留下日志，失败时能发现。
+    entrypoint: ["certbot", "renew", "--webroot", "--webroot-path", "/var/www/certbot", "--quiet"]
+
+volumes:
+  # 数据库、上传图片、日志
+  blog_data:
+  # 前端构建产物
+  frontend_dist:
+  # ACME 挑战文件（临时）
+  certbot_www:
+  # 证书
+  certbot_certs:
+
+networks:
+  blog_net:
+    driver: bridge

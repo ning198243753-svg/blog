@@ -1,0 +1,89 @@
+# ============================================================
+# Git 行尾与文本属性
+#
+# 【为什么需要这个文件 —— 这里踩过一个真实的坑】
+#
+# 开发在 Windows，部署在 Linux。Git 默认会把文本文件在
+# Windows 上检出为 CRLF、提交时转成 LF（core.autocrlf=true）。
+# 但仓库里存的是什么，取决于**提交时**那台机器的配置 ——
+# 只要有一台机器的配置不同，仓库里就会混入 CRLF 的文件。
+#
+# 后果在 shell 脚本上最严重：bash 无法执行含 CRLF 的脚本，
+# 报错是 `syntax error near unexpected token $'{\r''` ——
+# 这个报错完全没提到行尾问题，你会去翻脚本找语法错误，
+# 而脚本本身是正确的。
+#
+# 所以这里显式声明：**这些文件在仓库里永远是 LF**，
+# 不依赖任何人的本地 Git 配置。
+# ============================================================
+
+# 默认：由 Git 自动判断文本文件，检出时用平台默认行尾
+* text=auto
+
+# 【这个文件自己也声明一下】
+# 不加的话 Git 会按平台默认处理它，在 Windows 上检出为 CRLF。
+# 虽然 Git 解析规则时能接受 CRLF，但仓库里存着两种行尾
+# 会让 diff 出现整文件改动的噪音。
+.gitattributes text eol=lf
+.gitignore text eol=lf
+
+# ---- 必须永远是 LF 的文件 ----
+# 这些文件要在 Linux 上执行或解析，CRLF 会直接导致失败。
+
+# shell 脚本：CRLF 会让 bash 报语法错误
+*.sh text eol=lf
+
+# 容器配置：CRLF 会让 Dockerfile 的续行符失效
+# （反斜杠后会多出一个 \r，被当成参数的一部分）
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+docker-compose.yml text eol=lf
+docker-compose*.yml text eol=lf
+
+# Nginx 配置：CRLF 通常无害，但保持一致更省心
+*.conf text eol=lf
+nginx.conf text eol=lf
+
+# Python：CRLF 语法上可行，但混用会在 diff 里产生噪音
+*.py text eol=lf
+
+# 前端源码与配置
+*.ts text eol=lf
+*.vue text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+
+# 环境变量文件
+# 【这条格外重要】CRLF 会让 .env 里每个值末尾多一个 \r。
+# 表现是 SECRET_KEY 多了一个不可见字符，签名验证全部失败 ——
+# 而登录接口只会报「用户名或密码错误」，完全指不到真正的原因。
+.env text eol=lf
+.env.example text eol=lf
+
+# ---- 必须保持二进制（不做任何转换）----
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.pdf binary
+*.docx binary
+*.xlsx binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+
+# ---- 让 diff 更有意义 ----
+# 生成的文件不参与 diff 统计，也不该被合并冲突纠缠。
+package-lock.json -diff linguist-generated
+pnpm-lock.yaml -diff linguist-generated
