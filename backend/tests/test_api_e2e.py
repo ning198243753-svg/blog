@@ -145,6 +145,53 @@ status, detail2 = get(f"/articles/{slug}")
 after = detail2["data"]["view_count"]
 check("阅读数自增 1", after == before + 1, f"{before} → {after}")
 
+# ---------- 4b. 上下篇 ----------
+print("\n--- 上下篇 ---")
+d = detail2["data"]
+check("详情含 prev 字段", "prev" in d)
+check("详情含 next 字段", "next" in d)
+
+# 首页第一条是最新文章，它不应该有「下一篇」（更新的）
+latest = data["items"][0]
+status, latest_detail = get(f"/articles/{latest['slug']}")
+check("最新一篇没有 next", latest_detail["data"]["next"] is None,
+      str(latest_detail["data"]["next"]))
+
+# 最后一页最后一条是最旧文章，它不应该有「上一篇」（更早的）
+oldest = page3["data"]["items"][-1]
+status, oldest_detail = get(f"/articles/{oldest['slug']}")
+check("最旧一篇没有 prev", oldest_detail["data"]["prev"] is None,
+      str(oldest_detail["data"]["prev"]))
+
+# 中间的文章两侧都应该有
+middle = data["items"][3]
+status, middle_detail = get(f"/articles/{middle['slug']}")
+md = middle_detail["data"]
+check("中间文章有 prev 和 next",
+      md["prev"] is not None and md["next"] is not None,
+      f"prev={md['prev'] and md['prev']['title']} next={md['next'] and md['next']['title']}")
+
+# 相邻关系必须对称：A 的 next 应该是 B，而 B 的 prev 应该是 A。
+# 这条断言防的是「方向搞反」—— 如果 prev/next 的定义写反了，
+# 单独看每一篇都正常，只有交叉验证才能发现。
+if md["next"]:
+    status, next_detail = get(f"/articles/{md['next']['slug']}")
+    check("相邻关系对称（A.next 的 prev 是 A）",
+          next_detail["data"]["prev"] is not None
+          and next_detail["data"]["prev"]["slug"] == middle["slug"],
+          f"{middle['slug']} → next {md['next']['slug']} → prev "
+          f"{next_detail['data']['prev'] and next_detail['data']['prev']['slug']}")
+
+# 上下篇不能是草稿
+all_neighbor_slugs = []
+for item in data["items"][:5]:
+    status, dd = get(f"/articles/{item['slug']}")
+    for key in ("prev", "next"):
+        if dd["data"][key]:
+            all_neighbor_slugs.append(dd["data"][key]["slug"])
+check("上下篇中不含草稿", not any("草稿" in s for s in all_neighbor_slugs),
+      f"检查了 {len(all_neighbor_slugs)} 个相邻链接")
+
 # ---------- 5. 标签 ----------
 print("\n--- 标签 ---")
 status, tags = get("/tags")

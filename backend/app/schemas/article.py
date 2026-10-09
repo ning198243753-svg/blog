@@ -35,15 +35,36 @@ class ArticleListItem(BaseModel):
     tags: list[TagOut] = Field(default_factory=list)
 
 
+class ArticleNeighbor(BaseModel):
+    """相邻文章（上一篇 / 下一篇）
+
+    只带 title 与 slug：详情页底部只需要「能点进去」，
+    返回完整列表项会白带 tags、摘要等用不上的字段。
+
+    slug 是必需的 —— 中文标题转成的 slug 无法从标题反推，
+    前端必须拿到它才能拼出正确的链接。
+    """
+
+    title: str
+    slug: str
+
+
 class ArticleDetail(ArticleListItem):
-    """详情：在列表项基础上增加正文 HTML
+    """详情：在列表项基础上增加正文 HTML 与相邻文章
 
     不返回 content_md：那是编辑用的原始文本，
     访客页面用不到，返回它只是白白增加体积。
     后台编辑接口会单独返回 content_md（见 ArticleAdminDetail）。
+
+    prev / next 的含义按「时间顺序」而非「列表顺序」：
+    prev = 更早发布的一篇，next = 更晚发布的一篇。
+    没有相邻文章时为 null，前端据此隐藏该侧 ——
+    这比返回空字符串好，因为「没有」和「标题是空」是两件事。
     """
 
     content_html: str
+    prev: ArticleNeighbor | None = None
+    next: ArticleNeighbor | None = None
 
 
 class ArticleAdminDetail(ArticleDetail):

@@ -1,0 +1,185 @@
+/* ============================================================
+   正文样式 / Markdown Body
+   全部数值来自《07-视觉设计系统-v1.0》第 3 章「排版规范」。
+
+   为什么单独一个文件、用 .markdown-body 作用域：
+   v-html 插入的内容在 Vue 的 scoped 样式里**拿不到 data-v 属性**，
+   组件内的 <style scoped> 对它是无效的。
+   这是 M2 里最容易踩的坑 —— 写法看着没问题，样式就是不生效。
+   ============================================================ */
+
+.markdown-body {
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  color: var(--color-text);
+  /* 左对齐，不用 justify：中文两端对齐会产生难看的字间距 */
+  text-align: left;
+  /* 中文没有词间空格，字形饱满，需要比拉丁文更大的行距（07 文档 3.1） */
+  word-wrap: break-word;
+}
+
+/* ---- 段落 ---- */
+.markdown-body p {
+  /* 段间距约 1em，用 margin 而非空行 */
+  margin: 0 0 1em;
+}
+
+/* ---- 标题层级（07 文档 3.2 表格 12）---- */
+.markdown-body h2 {
+  margin: var(--space-7) 0 var(--space-4);
+  padding-bottom: var(--space-2);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-heading);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.markdown-body h3 {
+  margin: var(--space-6) 0 var(--space-3);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.markdown-body h4 {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* 第一个元素不带上边距，否则正文顶部会多出一块空白 */
+.markdown-body > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- 列表 ---- */
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 1em;
+  padding-left: 1.6em;
+}
+
+.markdown-body li {
+  margin-bottom: var(--space-2);
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-top: var(--space-2);
+  margin-bottom: 0;
+}
+
+/* ---- 引用 ---- */
+.markdown-body blockquote {
+  margin: 0 0 1em;
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-bg-soft);
+  color: var(--color-text-secondary);
+}
+
+.markdown-body blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- 行内代码 ---- */
+.markdown-body code {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-soft);
+  color: var(--color-danger);
+  font-size: 0.9em;
+  font-family: var(--font-mono);
+}
+
+/* ---- 代码块 ---- */
+.markdown-body pre {
+  margin: 0 0 1em;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-soft);
+  overflow-x: auto;
+  /* 代码块行高独立于正文：1.8 对代码太松，读起来断行不清晰 */
+  line-height: var(--leading-code);
+}
+
+/* 代码块内的 code 不要继承行内的背景与颜色，否则会叠出双色块 */
+.markdown-body pre code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+/* ---- 表格 ---- */
+.markdown-body table {
+  width: 100%;
+  margin: 0 0 1em;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.markdown-body th {
+  background: var(--color-bg-soft);
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+/* ---- 分隔线 ---- */
+.markdown-body hr {
+  height: 1px;
+  margin: var(--space-6) 0;
+  border: none;
+  background: var(--color-border);
+}
+
+/* ---- 链接 ---- */
+.markdown-body a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.markdown-body a:hover {
+  color: var(--color-primary-hover);
+}
+
+/* ---- 图片 ----
+   3Mbps 下图片是首屏最大负担（07 文档第 6 章）。
+   后端渲染 HTML 时无法加 loading 属性，这里先限制尺寸；
+   M4 上传功能落地后，在渲染层补 loading="lazy"。 */
+.markdown-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: var(--space-4) auto;
+  border-radius: var(--radius-md);
+}
+
+/* ---- 任务列表（gfm-like 预设支持）---- */
+.markdown-body input[type='checkbox'] {
+  margin-right: var(--space-2);
+}
+
+/* ---- 代码高亮 token ----
+   后端用 markdown-it 渲染，不引入 Pygments（ADR-06：轻量）。
+   因此这里只对 <code class="language-xxx"> 做最基础的处理，
+   真正的语法着色留到需要时再补 —— 现在加一套高亮库
+   等于给首屏增加几十 KB，与 NFR-14 冲突。 */
+.markdown-body pre code[class*='language-'] {
+  color: var(--color-text);
+}

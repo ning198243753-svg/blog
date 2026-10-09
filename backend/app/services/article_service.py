@@ -114,6 +114,52 @@ def list_articles(
     }
 
 
+def _neighbors(db: Session, article: Article) -> dict:
+    """查询上一篇 / 下一篇（文档 06 表格 8）
+
+    方向定义（这是容易搞混的地方，明确写下来）：
+    - prev = 比当前文章**更早**发布的那一篇（时间上在它前面）
+    - next = 比当前文章**更晚**发布的那一篇（时间上在它后面）
+
+    为什么方向这么定：读者读完后想接着读的是「更新的内容」，
+    按时间倒序的博客里，「下一篇」指更新的一篇才符合直觉。
+
+    排序键必须与列表接口完全一致（coalesce(published_at, created_at) + id），
+    否则会出现「列表里的顺序」和「详情页的上下篇」对不上的情况 ——
+    尤其是在同一天发布了多篇文章时，只按时间比较会拿到不确定的结果。
+    """
+    order_key = func.coalesce(Article.published_at, Article.created_at)
+    current_key = article.published_at or article.created_at
+
+    def one(stmt):
+        row = db.scalars(stmt.limit(1)).unique().one_or_none()
+        if row is None:
+            return None
+        return {"title": row.title, "slug": row.slug}
+
+    # 更早：排序键 < 当前，取最接近的一个（即倒序里的第一条）
+    prev = one(
+        _published_query()
+        .where(
+            (order_key < current_key)
+            | ((order_key == current_key) & (Article.id < article.id))
+        )
+        .order_by(order_key.desc(), Article.id.desc())
+    )
+
+    # 更晚：排序键 > 当前，取最接近的一个（即正序里的第一条）
+    next_ = one(
+        _published_query()
+        .where(
+            (order_key > current_key)
+            | ((order_key == current_key) & (Article.id > article.id))
+        )
+        .order_by(order_key.asc(), Article.id.asc())
+    )
+
+    return {"prev": prev, "next": next_}
+
+
 def get_article_by_slug(db: Session, slug: str, *, count_view: bool = True) -> dict:
     """文章详情（文档 05 第 2.2 节）
 
@@ -140,6 +186,11 @@ def get_article_by_slug(db: Session, slug: str, *, count_view: bool = True) -> d
 
     data = _to_item(article)
     data["content_html"] = article.content_html
+
+    # 上下篇：只多两条 LIMIT 1 查询，各自走 idx_articles_status_published 索引。
+    # 不做成一次 OR 查询 —— 那需要在一个结果集里区分「更早的」和「更晚的」，
+    # 反而要取回全部相邻行再在内存里挑，得不偿失。
+    data.update(_neighbors(db, article))
     return data
 
 
