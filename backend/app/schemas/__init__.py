@@ -29,6 +29,7 @@ from app.schemas.tag import (
     TagUsage,
     TagWithCount,
 )
+from app.schemas.upload import UploadResult
 
 __all__ = [
     "ArchiveGroup",
@@ -51,4 +52,5 @@ __all__ = [
     "TagUpdate",
     "TagUsage",
     "TagWithCount",
+    "UploadResult",
 ]

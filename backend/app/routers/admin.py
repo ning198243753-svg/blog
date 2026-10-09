@@ -10,7 +10,7 @@
 只会让路由注册变复杂，而保护级别完全相同，拆开没有收益。
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
@@ -30,6 +30,7 @@ from app.schemas import (
     TagUpdate,
     TagUsage,
     TagWithCount,
+    UploadResult,
 )
 from app.services import get_article_for_admin, get_site_config, to_list_item
 from app.services.article_admin_service import (
@@ -46,6 +47,7 @@ from app.services.tag_admin_service import (
     list_tags_for_admin,
     update_tag,
 )
+from app.services.upload_service import save_image
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -273,3 +275,36 @@ def admin_update_site_config(
     """
     values = update_site_config(db, payload.values)
     return ok({"values": values}, message="保存成功")
+
+
+# ------------------------------------------------------------------
+# 图片上传（文档 05 第 4.7 节 / ADR-02）
+# ------------------------------------------------------------------
+
+
+@router.post("/upload", response_model=ApiResponse[UploadResult])
+async def admin_upload_image(
+    file: UploadFile = File(..., description="图片文件，字段名必须是 file"),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """上传图片：校验格式 → 缩放 → 转 WebP → 存盘
+
+    【为什么这里是 async 函数，而其他接口都是同步的】
+    UploadFile 的读取是异步的。FastAPI 对同步的 def 路由会丢到线程池，
+    而 UploadFile.read() 在同步函数里调用会因为拿不到事件循环而失败。
+    用 async def 就能直接 await 读取。
+
+    注意：真正的压缩是 CPU 密集的同步操作（Pillow 不解锁 GIL），
+    放在 async 函数里会阻塞事件循环。对单人博客（上传是低频操作）
+    这个代价可以接受；如果将来并发上传变多，应该改成
+    `await run_in_threadpool(save_image, content)`。
+
+    【为什么不用 File(...) 之外的上传方式】
+    文档 05 规定字段名是 file，multipart/form-data。
+    这里显式写出来，前端照着拼 FormData 即可。
+    """
+    # 一次读进内存。有 2MB 上限兜底，不会失控。
+    content = await file.read()
+
+    result = save_image(content)
+    return ok(result, message="上传成功")
