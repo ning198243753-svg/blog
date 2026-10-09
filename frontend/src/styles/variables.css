@@ -47,9 +47,14 @@
   --space-7: 48px;
   --space-8: 64px;
 
-  /* ---- 圆角 ---- */
+  /* ---- 圆角 ----
+     lg 用于卡片与弹层这类「大块面」，md 用于按钮与输入框。
+     补 lg 是因为 M2/M4 的卡片已经在用它 ——
+     此前缺这个令牌，那些 border-radius 实际是无效值，
+     浏览器回退到 0（直角），但不会有任何报错提示。 */
   --radius-sm: 4px;
   --radius-md: 8px;
+  --radius-lg: 12px;
   --radius-full: 999px;
 
   /* ---- 阴影 ---- */
@@ -60,9 +65,12 @@
   --content-max: 760px;
   --header-height: 64px;
 
-  /* ---- 动效与层级 ---- */
+  /* ---- 动效与层级 ----
+     层级只有三档，刻意不细化：层级太多会让「谁在上面」
+     变成需要推理的问题。modal 在 header 之上、toast 在最上。 */
   --transition: 150ms ease;
   --z-header: 100;
+  --z-modal: 200;
   --z-toast: 1000;
 
   /* ---- 代码高亮 token（供 markdown.css 使用）---- */

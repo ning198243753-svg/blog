@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { setUnauthorizedHandler } from '@/api/client'
+import { useAuthStore } from '@/stores/auth'
+import { useSiteStore } from '@/stores/site'
 
 /**
  * 路由表（文档 06 第 4.1 节）。
@@ -107,6 +109,11 @@ const router = createRouter({
 
 // 401 时由 api 层回调到这里，避免 api 层反向依赖 router
 setUnauthorizedHandler(() => {
+  // 这里只做两件事：清本地登录态、跳到登录页。
+  // 不在 api 层直接跳转，是因为 api 层不该知道路由的存在。
+  const auth = useAuthStore()
+  auth.clear()
+
   if (router.currentRoute.value.meta.requiresAuth) {
     router.push({
       path: '/admin/login',
@@ -115,20 +122,43 @@ setUnauthorizedHandler(() => {
   }
 })
 
-router.beforeEach((to) => {
-  // M0 阶段还没有登录功能，这里先留好结构（文档 06 第 4.2 节）。
-  // M3 实现鉴权后，把下面两段替换为真实的登录态判断：
+router.beforeEach(async (to) => {
+  // 站点配置在首次进入时拉一次。放在守卫里而不是 App.vue 的 onMounted：
+  // 守卫是 await 的，能保证页面渲染时页头已经有正确的标题，
+  // 否则会先显示兜底标题再跳变成真实标题。
+  void useSiteStore().load()
+
+  if (!to.meta.requiresAuth) {
+    return true
+  }
+
+  const auth = useAuthStore()
+
+  // 【顺序很关键：先确认登录态，再判断】
   //
-  // if (to.meta.requiresAuth && !authStore.checked) {
-  //   await authStore.fetchMe()          // 恢复登录态（Pinia 刷新即丢失）
-  // }
-  // if (to.meta.requiresAuth && !authStore.isLoggedIn) {
-  //   return { path: '/admin/login', query: { redirect: to.fullPath } }
-  // }
-  if (to.meta.requiresAuth) {
+  // Pinia 是内存状态，刷新页面即清空。所以首次进入后台时
+  // user 是 null —— 但那表示「还不知道」，不表示「未登录」。
+  // 如果直接判断 isLoggedIn，刷新后台页面会先跳到登录页，
+  // 等 /auth/me 返回 200 才发现其实已登录 —— 用户看到一次闪烁。
+  //
+  // ensureLoaded 内部用 Promise 去重，并发导航不会重复请求。
+  await auth.ensureLoaded()
+
+  if (!auth.isLoggedIn) {
     return { path: '/admin/login', query: { redirect: to.fullPath } }
   }
+
   return true
+})
+
+// 已登录时访问登录页 → 直接进后台。
+// 不处理的话，用户点了浏览器「后退」会看到一个没有意义的登录表单。
+router.beforeEach((to) => {
+  if (to.name !== 'admin-login') return true
+  const auth = useAuthStore()
+  if (!auth.resolved || !auth.isLoggedIn) return true
+  const redirect = to.query.redirect
+  return typeof redirect === 'string' && redirect ? redirect : { path: '/admin/articles' }
 })
 
 // FR-22（v1.3 修订后）：只要求 title 与 description 正确设置，不含 SEO

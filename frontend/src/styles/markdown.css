@@ -24,7 +24,20 @@
   margin: 0 0 1em;
 }
 
-/* ---- 标题层级（07 文档 3.2 表格 12）---- */
+/* ---- 标题层级（07 文档 3.2 表格 12）----
+   刻意不给 h1 定义样式：
+   文章详情页的 h1 是文章标题（由页面渲染），正文从 h2 开始。
+   正文里出现 `# 一级标题` 在语义上会与文章标题打架，
+   所以不给它样式是一种「弱提示」——
+   后台编辑器的预览里它会显示成无样式的大字，与 h2 明显不同。
+   单独补一条，避免它退化成浏览器默认的巨型粗体。 */
+.markdown-body h1 {
+  margin: var(--space-6) 0 var(--space-3);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
 .markdown-body h2 {
   margin: var(--space-7) 0 var(--space-4);
   padding-bottom: var(--space-2);
