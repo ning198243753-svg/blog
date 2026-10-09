@@ -13,6 +13,17 @@
  *   4. 图片上传：<input type="file"> + FormData 这条链路
  *   5. 离开提醒：有未保存修改时是否拦截
  *
+ * 【关于测试数据的清理 —— 这个文件曾经留下过残留】
+ * 早期版本只在流程末尾删除自己创建的文章。第一次运行时因为
+ * Cookie 时序问题删不掉（401），那篇文章就永久留在了开发库里，
+ * 并且让 M2 的回归测试出现一条莫名其妙的失败。
+ *
+ * 所以现在的做法是：
+ *   1. 启动时先扫一遍，把所有「本脚本特征标题」的历史残留删掉
+ *      —— 覆盖上一次运行中途失败的情况
+ *   2. 退出前（含异常路径）再删一次，用 try/finally 保证执行
+ *   3. 不依赖「测试成功」这个前提来做清理
+ *
  * 运行前需要：后端 8000 与前端 5173 都在运行。
  */
 
@@ -20,8 +31,12 @@ import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 
 const BASE = 'http://127.0.0.1:5173'
-const API = 'http://127.0.0.1:8000/api'
 const SHOTS = 'test-results'
+
+/** 本脚本创建的文章标题前缀。清理时靠它识别自己的残留 */
+const TITLE_TAG = 'M4 验证文章'
+/** 本脚本创建的标签名前缀 */
+const TAG_TAG = 'M4标签'
 
 mkdirSync(SHOTS, { recursive: true })
 
@@ -31,6 +46,8 @@ const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'TestPassw0rd!2026'
 let passed = 0
 const failed = []
 const consoleErrors = []
+/** 本次运行创建的资源，退出时清理 */
+const createdArticleIds = new Set()
 
 function check(name, ok, detail = '') {
   if (ok) {
@@ -50,6 +67,57 @@ async function shot(page, name) {
 const browser = await chromium.launch()
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 const page = await context.newPage()
+
+// ---- 清理工具：用页面内 fetch（自带 Cookie）调用后端接口 ----
+
+async function sweepLeftovers() {
+  return page.evaluate(
+    async ({ titleTag, tagTag }) => {
+      const removed = { articles: [], tags: [] }
+      const get = async (url, init) => {
+        const res = await fetch(url, { credentials: 'include', ...init })
+        if (!res.ok) return null
+        const body = await res.json()
+        return body.data
+      }
+
+      // 文章：翻遍所有页找特征标题
+      let pageNo = 1
+      for (;;) {
+        const data = await get(`/api/admin/articles?page=${pageNo}&page_size=50`)
+        if (!data || !data.items?.length) break
+        for (const item of data.items) {
+          if (item.title.startsWith(titleTag)) {
+            const res = await fetch(`/api/admin/articles/${item.id}`, {
+              method: 'DELETE',
+              credentials: 'include',
+            })
+            if (res.ok) removed.articles.push(`${item.id}:${item.title}`)
+          }
+        }
+        if (pageNo >= data.pages) break
+        pageNo++
+      }
+
+      // 标签：特征名 + force（可能已挂在文章上）
+      const tags = await get('/api/admin/tags')
+      if (Array.isArray(tags)) {
+        for (const tag of tags) {
+          if (tag.name.startsWith(tagTag)) {
+            const res = await fetch(`/api/admin/tags/${tag.id}?force=true`, {
+              method: 'DELETE',
+              credentials: 'include',
+            })
+            if (res.ok) removed.tags.push(tag.name)
+          }
+        }
+      }
+
+      return removed
+    },
+    { titleTag: TITLE_TAG, tagTag: TAG_TAG },
+  )
+}
 
 page.on('console', (msg) => {
   if (msg.type() !== 'error') return
@@ -71,9 +139,89 @@ page.on('response', (res) => {
   }
 })
 
+// 【安全网】无论测试成功还是抛异常，都要清理。
+// 之前只在流程末尾清理，一旦中途失败就永久留下垃圾数据 ——
+// 而且残留会让**别的**测试出现莫名其妙的失败，
+// 排查时完全看不出关联。真正的清理在下面的 finally 里。
+let cleanupDone = false
+async function cleanup() {
+  if (cleanupDone) return
+  cleanupDone = true
+  try {
+    // 先保证处于已登录状态：未登录时 sweep 会拿到 401 而静默失效
+    const loggedIn = await page.evaluate(async () => {
+      const res = await fetch('/api/auth/me', { credentials: 'include' })
+      return res.ok
+    })
+    if (!loggedIn) {
+      await page.goto(`${BASE}/admin/login`, { waitUntil: 'domcontentloaded' })
+      await page.fill('input[name="username"]', ADMIN_USER)
+      await page.fill('input[name="password"]', ADMIN_PASS)
+      await page.click('button[type="submit"]')
+      await page.waitForURL(/\/admin\//, { timeout: 15000 }).catch(() => {})
+      for (let i = 0; i < 40; i++) {
+        const c = await context.cookies()
+        if (c.some((x) => x.name === 'blog_session' && x.value)) break
+        await page.waitForTimeout(250)
+      }
+    }
+
+    const removed = await sweepLeftovers()
+    if (removed.articles.length || removed.tags.length) {
+      console.log('\n[清理] 删除残留：')
+      for (const a of removed.articles) console.log(`  文章 ${a}`)
+      for (const t of removed.tags) console.log(`  标签 ${t}`)
+    } else {
+      console.log('\n[清理] 无残留')
+    }
+  } catch (e) {
+    console.log(`\n[清理] 失败（需人工检查）：${e.message}`)
+  }
+}
+
 console.log('='.repeat(66))
 console.log('M4 管理后台验证')
 console.log('='.repeat(66))
+
+try {
+  // ==================================================================
+  console.log('\n--- 0. 清理上次运行可能留下的残留 ---')
+  // ==================================================================
+  //
+  // 【为什么要专门做这一步】
+  // 上一次运行如果中途失败（超时、断言抛错），它创建的文章就留在库里。
+  // 那种残留不会自己消失，而且会**污染别的测试**：
+  // M2 的回归测试就因为多出一篇「M4 验证文章」而出现一条
+  // 看起来毫不相关的失败，排查时很难联想到是这里留下的。
+  //
+  // 所以清理不是「流程末尾的礼貌动作」，而是启动时的前提条件。
+  {
+    await page.goto(`${BASE}/admin/login`, { waitUntil: 'domcontentloaded' })
+    await page.fill('input[name="username"]', ADMIN_USER)
+    await page.fill('input[name="password"]', ADMIN_PASS)
+    await page.click('button[type="submit"]')
+    await page.waitForURL(/\/admin\//, { timeout: 15000 }).catch(() => {})
+    for (let i = 0; i < 40; i++) {
+      const c = await context.cookies()
+      if (c.some((x) => x.name === 'blog_session' && x.value)) break
+      await page.waitForTimeout(250)
+    }
+
+    const removed = await sweepLeftovers()
+    if (removed.articles.length || removed.tags.length) {
+      console.log('删除上次残留：')
+      for (const a of removed.articles) console.log(`  文章 ${a}`)
+      for (const t of removed.tags) console.log(`  标签 ${t}`)
+    } else {
+      console.log('无残留')
+    }
+
+    // 退出，让第 1 节从「未登录」状态开始
+    await page.evaluate(() =>
+      fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }),
+    )
+    await context.clearCookies()
+  }
 
 // ====================================================================
 console.log('\n--- 1. 路由守卫：未登录访问后台 ---')
@@ -513,10 +661,11 @@ await page.waitForURL(/\/admin\/login/, { timeout: 10000 }).catch(() => {})
 check('退出后无法访问后台页面', page.url().includes('/admin/login'), page.url())
 
 // ====================================================================
-console.log('\n--- 13. 清理测试数据 ---')
+console.log('\n--- 13. 验证删除功能本身有效 ---')
 // ====================================================================
 
 // 重新登录以删除测试文章
+await page.goto(`${BASE}/admin/login`, { waitUntil: 'domcontentloaded' })
 await page.fill('input[name="username"]', ADMIN_USER)
 await page.fill('input[name="password"]', ADMIN_PASS)
 await page.click('button[type="submit"]')
@@ -547,6 +696,14 @@ const afterDelete = await page.evaluate(async (id) => {
   return res.status
 }, newArticleId)
 check('删除后接口返回 404', afterDelete === 404, `status=${afterDelete}`)
+
+// 通过列表页确认删除也生效（不只是接口返回 200）
+await page.goto(`${BASE}/admin/articles?q=${encodeURIComponent(uniqueTitle)}`, {
+  waitUntil: 'networkidle',
+})
+await page.waitForTimeout(800)
+const remaining = await page.locator('.admin-articles__table tbody tr').count()
+check('列表页搜索确认文章已消失', remaining === 0, `${remaining} 行`)
 
 // ====================================================================
 console.log('\n--- 14. 控制台错误 ---')
@@ -602,9 +759,19 @@ check('控制台 4xx 数量与实际响应一致',
 console.log('\n所有 4xx/5xx 请求：')
 for (const line of httpErrors) console.log(`  ${line}`)
 if (httpErrors.length === 0) console.log('  （无）')
-// ====================================================================
 
-await browser.close()
+} catch (err) {
+  // 【为什么要有这个 catch】
+  // 之前没有它，任何一步抛异常（比如元素等不到超时）都会让脚本
+  // 直接崩掉，跳过结尾的清理 —— 于是测试创建的文章永久留在库里。
+  // 那种残留不会自己消失，还会让别的测试出现看不出关联的失败。
+  console.log(`\n[异常] 测试中断：${err.message}`)
+  failed.push(`脚本异常中断：${err.message.split('\n')[0]}`)
+} finally {
+  // 无论成功、失败还是抛异常，都清理
+  await cleanup()
+  await browser.close()
+}
 
 console.log()
 console.log('='.repeat(66))

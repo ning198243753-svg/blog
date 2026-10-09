@@ -84,7 +84,19 @@ console.log('\n=== 2. Tag filter (URL driven) ===')
 // ============================================================
 await page.locator('.filter__item', { hasText: 'Vue' }).first().click()
 await page.waitForURL('**/?tag=vue**')
-await page.waitForLoadState('networkidle')
+
+// 【必须等元素，不能只等 networkidle】
+// SPA 的路由变化与数据渲染都发生在 networkidle 之后，
+// 直接数卡片会得到 0 —— 而下面的「刷新后」那条却会通过，
+// 因为 reload 是完整加载。这种「同一个断言在刷新前后结果不同」
+// 的现象，正是测试写错而不是代码有问题的信号。
+//
+// 这里的第一张卡片可能来自上一个筛选（旧数据），所以先用
+// 卡片数量变化作为「新数据已渲染」的判据，再断言最终数量。
+await page.waitForFunction(
+  () => document.querySelectorAll('.card').length === 4,
+  { timeout: 10000 },
+).catch(() => {})
 
 const filteredCount = await page.locator('.card').count()
 check('tag filter narrows list', filteredCount === 4, `count=${filteredCount} (Vue has 4)`)

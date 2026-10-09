@@ -23,6 +23,7 @@
 
 import argparse
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -105,6 +106,29 @@ def clean_test_db() -> None:
     for path in (TEST_DB, TEST_DB_WAL, TEST_DB_SHM):
         if path.exists():
             path.unlink()
+
+
+def port_in_use(host: str, port: int) -> bool:
+    """检查端口是否已被监听
+
+    【为什么不能用「能不能连上」来判断】
+    那正是这里踩过的坑：开发后端开着时端口能连上，
+    于是 wait_for_server 返回 True 并打印「服务已就绪」，
+    但那个响应来自开发后端，不是我们启动的测试服务。
+    测试于是全部打在开发库上，报出一堆看着像代码坏了的 401。
+
+    直接尝试**绑定**该端口才是可靠的判断：
+    绑定成功说明端口空闲（随即释放），失败说明已被占用。
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        # 不设 SO_REUSEADDR：在 Linux 上它会让「绑定已被监听的端口」
+        # 也成功，那样这个检查就失效了。Windows 行为本来就严格，
+        # 两边都不设才能得到一致的判断。
+        try:
+            sock.bind((host, port))
+            return False
+        except OSError:
+            return True
 
 
 def wait_for_server(url: str, timeout: float = 30.0) -> bool:
@@ -192,6 +216,32 @@ def main() -> int:
         print(">> 启动后端服务（127.0.0.1:8000，指向测试库）")
         print("=" * 66)
 
+        # 【启动前必须先确认端口是空的】
+        #
+        # 这里踩过一次坑，代价是十几分钟的误判：
+        # 开发用的后端如果还开着（它连的是开发库、管理员密码是 .env 里的那个），
+        # uvicorn 启动会因端口被占用而失败，但下面 wait_for_server
+        # 探测到的「有响应」其实是**开发后端**在响应 —— 于是打印「服务已就绪」，
+        # 测试全部打到开发后端上。
+        #
+        # 表现是：接口测试大面积 401，报「正确密码返回 401」，
+        # 看起来像鉴权代码坏了，而实际上测试库根本没被访问过。
+        # 更糟的是这时候测试**可能写到了开发库**。
+        #
+        # 所以宁可直接拒绝运行，也不要在错误的服务上跑测试。
+        if port_in_use("127.0.0.1", 8000):
+            print("[中止] 127.0.0.1:8000 已被占用。")
+            print()
+            print("       接口测试会启动自己的服务并指向测试库，")
+            print("       端口被占用时它无法启动，而测试请求会打到")
+            print("       占用端口的那个服务上 —— 那是开发后端，")
+            print("       连的是开发库，会产生完全误导的失败结果。")
+            print()
+            print("       请先关闭占用该端口的进程，再重新运行。")
+            print("       Windows:  netstat -ano | findstr :8000   然后 taskkill /PID <pid> /F")
+            print("       Linux:    lsof -i :8000   然后 kill <pid>")
+            return 1
+
         server = subprocess.Popen(
             [PYTHON, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
             cwd=str(ROOT), env=test_env,
@@ -199,9 +249,17 @@ def main() -> int:
         )
 
         if wait_for_server("http://127.0.0.1:8000/api/health"):
-            print("服务已就绪")
-            for label, script in ONLINE_TESTS:
-                results.append((label, run_one(label, script, test_env)))
+            # 再确认一次：服务是我们刚启动的那个进程。
+            # 上面的端口检查已经排除了「本来就有服务」的情况，
+            # 但如果我们的进程在探测期间崩了而端口被别的程序抢走，
+            # 这里能拦住。
+            if server.poll() is not None:
+                print("[FAIL] 服务进程已退出，但端口有响应 —— 响应来自其他程序")
+                results.append(("接口端到端验证", False))
+            else:
+                print("服务已就绪")
+                for label, script in ONLINE_TESTS:
+                    results.append((label, run_one(label, script, test_env)))
         else:
             print("[FAIL] 服务在 30 秒内没有就绪，跳过接口测试")
             results.append(("接口端到端验证", False))
