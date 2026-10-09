@@ -55,3 +55,13 @@ yarn-error.log*
 
 # 内容草稿（如需版本管理请删除此行）
 # drafts/
+
+# 运行时数据：数据库、上传图片、日志
+# 这些是「数据」不是「代码」，绝不应该进仓库。
+# 把 blog.db 提交上去的后果是：每台机器都有一份独立的库，
+# 而仓库里那份会随着每次提交不断膨胀且无法合并。
+backend/data/
+
+# Playwright 浏览器与测试产物
+playwright-report/
+test-results/

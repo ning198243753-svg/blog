@@ -1,0 +1,111 @@
+/* ============================================================
+   设计令牌 / Design Token
+   全部数值来自《07-视觉设计系统-v1.0》。
+   组件内禁止出现十六进制色值 —— 这是 ADR-08（暗色模式预留）成立的前提。
+   ============================================================ */
+
+:root {
+  /* ---- 颜色：1 个主色 + 灰阶 ---- */
+  --color-primary: #1e5cb8;
+  --color-primary-hover: #174a93;
+  --color-text: #14181f;
+  --color-text-secondary: #5a6472;
+  --color-text-muted: #8a93a0;
+  --color-heading: #0f2e4c;
+  --color-bg: #ffffff;
+  --color-bg-soft: #f7f9fb;
+  --color-border: #e4e9ef;
+  --color-danger: #c0392b;
+  --color-success: #2e7d5b;
+  --color-warning: #d98b2b;
+
+  /* ---- 字体 ---- */
+  --font-sans: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, Consolas, 'Courier New', monospace;
+
+  /* ---- 字号 ---- */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 26px;
+  --text-3xl: 28px;
+
+  /* ---- 行高 ---- */
+  --leading-base: 1.75;
+  --leading-tight: 1.35;
+  --leading-code: 1.6;
+
+  /* ---- 间距 ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ---- 圆角 ---- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-full: 999px;
+
+  /* ---- 阴影 ---- */
+  --shadow-sm: 0 1px 3px rgba(15, 46, 76, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 46, 76, 0.08);
+
+  /* ---- 布局 ---- */
+  --content-max: 760px;
+  --header-height: 64px;
+
+  /* ---- 动效与层级 ---- */
+  --transition: 150ms ease;
+  --z-header: 100;
+  --z-toast: 1000;
+
+  /* ---- 代码高亮 token（供 markdown.css 使用）---- */
+  --code-keyword: #0f5fa8;
+  --code-string: #1b6b4a;
+  --code-comment: #8a93a0;
+  --code-function: #7a3e9d;
+  --code-number: #b45309;
+  --code-punctuation: #5a6472;
+}
+
+/* 桌面端覆盖：正文 17px / 行高 1.8（07 文档 3.1） */
+@media (min-width: 1024px) {
+  :root {
+    --text-base: 17px;
+    --text-3xl: 34px;
+    --leading-base: 1.8;
+  }
+}
+
+/* ------------------------------------------------------------
+   暗色模式：v1 不实现（ADR-08）。
+   将来补齐时只需取消下面的注释，无需改动任何组件。
+   ------------------------------------------------------------
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: #4f8fe0;
+    --color-primary-hover: #6ba3ea;
+    --color-text: #d8dee6;
+    --color-text-secondary: #9aa5b1;
+    --color-text-muted: #6b7684;
+    --color-heading: #e8eef5;
+    --color-bg: #12161c;
+    --color-bg-soft: #1a1f27;
+    --color-border: #2a313b;
+    --code-keyword: #7ab8f5;
+    --code-string: #7fd4a8;
+    --code-comment: #6b7684;
+    --code-function: #c39ae8;
+    --code-number: #e8b273;
+    --code-punctuation: #9aa5b1;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+}
+------------------------------------------------------------ */
