@@ -55,8 +55,46 @@
 | M2 | 前端公开页面：列表 / 详情 / 标签 / 归档 / 搜索 / 关于 | ✅ 完成 |
 | M3 | 鉴权与管理接口：13 个后台接口 + 图片上传 | ✅ 完成 |
 | M4 | 管理后台页面：登录 / 文章 / 标签 / 设置 | ✅ 完成 |
-| M5 | 部署：Docker Compose + Nginx + HTTPS | 未开始 |
+| M5 | 部署：Docker Compose + Nginx + HTTPS | ✅ 配置完成，**未在真机验证** |
 | M6 | 验收与交付 | 未开始 |
+
+### 部署配置（M5）
+
+**开发机上没有安装 Docker，所以容器相关配置全部未经运行验证。**
+已验证与未验证的清单写在 [docs/部署文档.md](docs/部署文档.md) 第一节 ——
+**首次部署前请先读那一节。**
+
+```bash
+# 服务器上（Ubuntu 22.04，已装 Docker）
+git clone https://github.com/ning198243753-svg/blog.git /opt/blog
+cd /opt/blog
+cp backend/.env.example backend/.env && chmod 600 backend/.env
+# 编辑 .env 填入 SECRET_KEY 与 ADMIN_PASSWORD
+sed -i 's/__DOMAIN__/你的域名/g' nginx/nginx.conf
+./deploy.sh init          # 首次
+./deploy.sh update        # 之后每次更新
+DOMAIN=你的域名 ./deploy.sh verify
+```
+
+| 文件 | 作用 |
+| --- | --- |
+| `docker-compose.yml` | 三个服务（nginx / backend / certbot）+ 一次性前端构建任务 |
+| `backend/Dockerfile` | 多阶段构建，非 root 运行 |
+| `frontend/Dockerfile` | 多阶段构建，产物单独成阶段（不含 node_modules） |
+| `nginx/nginx.conf` | SPA 回退、API 转发、图片直出、HTTPS |
+| `deploy.sh` | init / update / rollback / backup / verify / status |
+| `deploy_check.py` | 部署配置一致性检查（10 类 40 项，本机可跑） |
+
+**改动部署配置后请先跑一次一致性检查**，它会抓出「看起来对但实际不一致」的问题
+（比如数据库路径不在卷内、Nginx 上限小于应用上限、后端端口意外暴露）：
+
+```bash
+python deploy_check.py
+```
+
+**为什么需要这个检查**：Docker 配置最典型的故障不是语法错（那些启动就报），
+而是多处配置之间的约定不一致 —— 启动不报错、健康检查也过，
+只有等到「容器重建后数据全没了」才暴露。而那时你可能已经在上面写了几周文章。
 
 ### 接口完成情况（对照文档 05）
 
