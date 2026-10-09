@@ -20,9 +20,11 @@ from app.services.article_service import (
     to_detail,
     to_list_item,
 )
+from app.services.auth_service import authenticate, to_current_user
 from app.services.site_service import get_articles_per_page, get_site_config
 
 __all__ = [
+    "authenticate",
     "get_article_by_slug",
     "get_article_for_admin",
     "get_articles_per_page",
@@ -30,6 +32,7 @@ __all__ = [
     "list_all_tags",
     "list_archive",
     "list_articles",
+    "to_current_user",
     "to_detail",
     "to_list_item",
 ]

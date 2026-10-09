@@ -14,9 +14,11 @@ from app.schemas.article import (
     ArticleCreate,
     ArticleDetail,
     ArticleListItem,
+    ArticleNeighbor,
     ArticleUpdate,
     SiteConfigOut,
 )
+from app.schemas.auth import CurrentUser, LoginRequest
 from app.schemas.common import PaginatedData, PageMeta, Pagination
 from app.schemas.tag import TagCreate, TagOut, TagUpdate, TagWithCount
 
@@ -26,7 +28,10 @@ __all__ = [
     "ArticleCreate",
     "ArticleDetail",
     "ArticleListItem",
+    "ArticleNeighbor",
     "ArticleUpdate",
+    "CurrentUser",
+    "LoginRequest",
     "SiteConfigOut",
     "PageMeta",
     "PaginatedData",

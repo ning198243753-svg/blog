@@ -14,7 +14,7 @@ from app.config import settings
 from app.core.errors import BizError, ErrorCode, ERROR_MESSAGES
 from app.core.handlers import register_error_handlers
 from app.core.logging import register_access_log, setup_logging
-from app.routers import public
+from app.routers import admin, auth, public
 
 setup_logging()
 
@@ -91,3 +91,5 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 # 所有接口统一挂在 /api 前缀下（ADR-04 同源，无 CORS）
 app.include_router(public.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")

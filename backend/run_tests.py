@@ -51,7 +51,9 @@ OFFLINE_TESTS = [
 ]
 
 ONLINE_TESTS = [
-    ("接口端到端验证", "tests/test_api_e2e.py"),
+    ("鉴权接口（登录/登出/当前用户）", "tests/test_auth_e2e.py"),
+    ("文章 CRUD 与权限边界", "tests/test_article_crud.py"),
+    ("公开接口端到端验证", "tests/test_api_e2e.py"),
 ]
 
 
@@ -151,12 +153,20 @@ def main() -> int:
         print("=" * 66)
 
         clean_test_db()
+        # 测试库的管理员密码。接口测试要用它登录（test_auth_e2e.py、
+        # test_article_crud.py 都会真的走登录流程），所以这个值必须与
+        # 建库时用的一致 —— 两处写死不同值会导致「测试全部 401」，
+        # 而报错看起来像鉴权代码坏了。这里只定义一次，两处共用。
+        test_admin_password = os.environ.get("ADMIN_PASSWORD", "TestPassw0rd!2026")
         test_env = base_env({
             "DATABASE_URL": f"sqlite:///{TEST_DB.as_posix()}",
             "BLOG_TEST_MODE": "1",
-            # 管理员密码只用于 init_db，测试里不登录，给个占位值即可
-            "ADMIN_PASSWORD": os.environ.get("ADMIN_PASSWORD", "TestPassw0rd!2026"),
+            "ADMIN_PASSWORD": test_admin_password,
             "DEBUG": "false",
+            # 测试库走 http，Cookie 的 secure 必须为 false，
+            # 否则浏览器/客户端会直接丢弃这个 Cookie，
+            # 表现为「登录成功但下一次请求仍是未登录」。
+            "COOKIE_SECURE": "false",
         })
 
         # 建表 + 造数据，全部作用在测试库上
