@@ -23,13 +23,28 @@ from app.schemas import (
     ArticleListItem,
     ArticleUpdate,
     PaginatedData,
+    SiteConfigOut,
+    SiteConfigUpdate,
+    TagCreate,
+    TagDeleteResult,
+    TagUpdate,
+    TagUsage,
+    TagWithCount,
 )
-from app.services import get_article_for_admin, to_list_item
+from app.services import get_article_for_admin, get_site_config, to_list_item
 from app.services.article_admin_service import (
     create_article,
     delete_article,
     list_articles_for_admin,
     update_article,
+)
+from app.services.site_admin_service import update_site_config
+from app.services.tag_admin_service import (
+    count_tag_usage,
+    create_tag,
+    delete_tag,
+    list_tags_for_admin,
+    update_tag,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -136,3 +151,125 @@ def admin_delete_article(
     """
     delete_article(db, article_id)
     return ok(None, message="删除成功")
+
+
+# ------------------------------------------------------------------
+# 标签管理（文档 05 第 3 章）
+# ------------------------------------------------------------------
+
+
+@router.get("/tags", response_model=ApiResponse[list[TagWithCount]])
+def admin_list_tags(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """后台标签列表：文章数含草稿
+
+    与公开的 GET /api/tags 的差别只在计数口径上：
+    公开接口只数已发布（访客视角），后台数全部。
+    否则会出现「标签显示 0 篇但点进去有草稿」的前后不一致。
+    """
+    return ok(list_tags_for_admin(db))
+
+
+@router.post("/tags", response_model=ApiResponse[dict])
+def admin_create_tag(
+    payload: TagCreate,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """新建标签
+
+    重名返回 40003 而不是自动加后缀 ——
+    标签名是给人选用的，悄悄造出「Vue-2」会让作者困惑。
+    """
+    tag_id = create_tag(db, name=payload.name, color=payload.color)
+    return ok({"id": tag_id}, message="创建成功")
+
+
+@router.get("/tags/{tag_id}/usage", response_model=ApiResponse[TagUsage])
+def admin_tag_usage(
+    tag_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """查询标签被多少篇文章使用（删除前的影响预览）
+
+    前端在弹出删除确认框之前调用它，好把「会影响 5 篇文章」
+    这句提示写具体。只有一个数字，比「确定要删除吗」有用得多。
+    """
+    return ok(count_tag_usage(db, tag_id))
+
+
+@router.put("/tags/{tag_id}", response_model=ApiResponse[dict])
+def admin_update_tag(
+    tag_id: int,
+    payload: TagUpdate,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """更新标签（局部更新）
+
+    slug 不随名字变化：改标签名不该让 /tags/vue 这个链接失效。
+    """
+    fields = payload.model_dump(exclude_unset=True)
+    update_tag(db, tag_id, **fields)
+    return ok({"id": tag_id}, message="更新成功")
+
+
+@router.delete("/tags/{tag_id}", response_model=ApiResponse[TagDeleteResult])
+def admin_delete_tag(
+    tag_id: int,
+    force: bool = Query(False, description="标签还挂在文章上时必须传 true"),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """删除标签
+
+    【为什么默认拒绝】
+    删标签会通过外键 CASCADE 摘掉它在所有文章上的关联，且不可恢复。
+    若标签还挂在文章上，默认返回 409 并要求显式 force=true ——
+    这样「误点删除按钮」不会立刻造成破坏。
+
+    依据是**删除的代价不对等**：误删标签要逐篇手动加回来，
+    而多一次确认点击的成本几乎为零。
+    """
+    result = delete_tag(db, tag_id, force=force)
+    return ok(result, message="删除成功")
+
+
+# ------------------------------------------------------------------
+# 站点配置（文档 05 第 5 章）
+# ------------------------------------------------------------------
+
+
+@router.get("/site", response_model=ApiResponse[SiteConfigOut])
+def admin_get_site_config(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """读取站点配置（后台）
+
+    与公开的 GET /api/site 返回同样的结构。
+    单独准备一个后台版本，是为了将来后台需要多看到一些
+    「不对外展示」的配置项时有地方放，而不必改动公开接口。
+    """
+    return ok({"values": get_site_config(db)})
+
+
+@router.put("/site", response_model=ApiResponse[SiteConfigOut])
+def admin_update_site_config(
+    payload: SiteConfigUpdate,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """更新站点配置（局部更新：只写传了的键）
+
+    返回更新后的完整配置 —— 前端可直接用它刷新界面，
+    少一次 GET，也避免「写成功但读到的还是旧值」这种困惑。
+
+    未知键会被拒绝（400），原因见 site_admin_service 里的说明：
+    静默接受拼错的键会变成「改了配置但页面没变」这类难查的问题。
+    """
+    values = update_site_config(db, payload.values)
+    return ok({"values": values}, message="保存成功")

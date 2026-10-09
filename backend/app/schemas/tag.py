@@ -51,3 +51,25 @@ class TagUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=32)
     color: str | None = Field(default=None, max_length=16, pattern=r"^#[0-9a-fA-F]{3,8}$")
+
+
+class TagUsage(BaseModel):
+    """标签的使用情况（删除前的影响预览）
+
+    article_count 包含草稿，published_count 只含已发布。
+    两者给出，是因为后台看到的是全部文章，而访客只看到已发布的 ——
+    只报一个数字会让作者低估删除的影响范围。
+    """
+
+    id: int
+    name: str
+    slug: str
+    article_count: int
+    published_count: int
+
+
+class TagDeleteResult(BaseModel):
+    """删除标签的结果"""
+
+    deleted_id: int
+    affected_articles: int

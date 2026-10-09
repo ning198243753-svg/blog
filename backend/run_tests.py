@@ -53,6 +53,7 @@ OFFLINE_TESTS = [
 ONLINE_TESTS = [
     ("鉴权接口（登录/登出/当前用户）", "tests/test_auth_e2e.py"),
     ("文章 CRUD 与权限边界", "tests/test_article_crud.py"),
+    ("标签与站点配置", "tests/test_tag_site_crud.py"),
     ("公开接口端到端验证", "tests/test_api_e2e.py"),
 ]
 
