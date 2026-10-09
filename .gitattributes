@@ -44,6 +44,15 @@ docker-compose*.yml text eol=lf
 *.conf text eol=lf
 nginx.conf text eol=lf
 
+# Docker 的忽略清单
+# 【为什么这个必须 LF】
+# .dockerignore 里每行是一个路径模式。行尾若是 CRLF，
+# Docker 会把末尾的 \r 当成模式的一部分 ——
+# 于是 `data/` 实际变成 `data/\r`，匹配不上任何路径，
+# **排除规则静默失效**。表现是构建变慢、
+# 甚至把数据库打进构建上下文，而不会有任何报错。
+.dockerignore text eol=lf
+
 # Python：CRLF 语法上可行，但混用会在 diff 里产生噪音
 *.py text eol=lf
 
