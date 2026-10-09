@@ -5,7 +5,6 @@
 从 .env 读 ADMIN_PASSWORD → 用它的哈希 → 执行登录接口 → 拿 Cookie。
 """
 
-import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -79,7 +78,9 @@ check("空令牌返回 None", read_session_token("") is None)
 check("无点号令牌返回 None", read_session_token("nodothere") is None)
 
 # 过期令牌：手工构造一个 exp 在过去的 payload
-import base64  # noqa: E402
+# 这三个导入放在这里是因为只有本段用到；
+# base64 不需要 —— 编码由 security 模块的 _b64encode 负责，
+# 直接调它比自己再实现一遍更不容易出错。
 import json  # noqa: E402
 import time  # noqa: E402
 

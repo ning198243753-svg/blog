@@ -24,7 +24,6 @@ Pillow 默认只写第一帧，动图会**静默**变成静图（不报错、不
 
 import io
 import secrets
-from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 

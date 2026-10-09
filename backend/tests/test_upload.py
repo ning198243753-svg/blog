@@ -15,8 +15,6 @@
 
 import io
 import json
-import sqlite3
-import struct
 import sys
 import urllib.error
 import urllib.request
@@ -26,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tests._env import TEST_DB_PATH, assert_not_dev_db  # noqa: E402
+from tests._env import assert_not_dev_db  # noqa: E402
 
 assert_not_dev_db("test_upload.py")
 
@@ -112,11 +110,7 @@ print("M3 图片上传验证")
 print(f"上传目录：{UPLOAD_DIR}")
 print("=" * 66)
 
-# ---------- 前置 ----------
-status, body = post_multipart("/auth/login", "x", "x", b"x")  # 触发一次请求确认服务活着
-status, login = urllib.request.Request(BASE + "/auth/login"), None
-import urllib.parse  # noqa: E402
-
+# ---------- 前置：登录 ----------
 login_req = urllib.request.Request(
     BASE + "/auth/login",
     data=json.dumps({
