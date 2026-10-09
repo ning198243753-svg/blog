@@ -59,6 +59,25 @@ print()
 print("=" * 60)
 print("3. 与数据库实际值一致")
 print("=" * 60)
+
+# 【这一段的断言是修正过的，说明原因】
+#
+# 最初的写法是：断言「库里的 view_count 恒等于公式值」。
+# 它第一次能过，随后就长期失败 —— 原因不是公式错了，而是这个断言
+# 建立在一个错误前提上：**view_count 是运行时状态，不是种子数据。**
+#
+# 每次打开一篇文章详情，后端都会 view_count += 1。
+# 只要有人访问过站点，这个值就不再等于 seed 时写入的初值。
+# 于是这个「测试」实际上在断言「没人访问过这个站点」——
+# 它跟代码正确性无关，只会制造假失败。
+#
+# 现在的断言改成验证**真正成立的性质**：
+#   库里每一篇文章的阅读数 >= 公式给它的初值
+# 因为阅读数只增不减，所以「当前值不小于初值」是恒成立的。
+# 它仍然能抓住「种子数据写错了初值」这类错误
+# （比如把初值写成 0，或公式被改成负数），
+# 但不会因为正常访问而误报。
+
 conn = sqlite3.connect(DB)
 rows = conn.execute("SELECT slug, view_count FROM articles WHERE status='published'").fetchall()
 db_map = {slug: count for slug, count in rows}
@@ -66,15 +85,31 @@ conn.close()
 
 from app.utils.slug import make_slug_from_title  # noqa: E402
 
-mismatch = []
+missing = []
+below_initial = []
 for index, (title, _tags) in enumerate(ARTICLES):
     slug = make_slug_from_title(title)
-    expected = fake_view_count(index)
+    initial = fake_view_count(index)
     actual = db_map.get(slug)
-    if actual != expected:
-        mismatch.append((slug, expected, actual))
+    if actual is None:
+        missing.append(slug)
+    elif actual < initial:
+        # 只增不减：当前值小于初值说明种子数据或计数逻辑被改坏了
+        below_initial.append((slug, initial, actual))
 
-check("每篇文章的阅读数与公式一致", not mismatch, f"{len(mismatch)} 处不符" + (f"：{mismatch[:3]}" if mismatch else ""))
+check("公式覆盖的每篇文章都在库中", not missing,
+      f"{len(missing)} 篇缺失" + (f"：{missing[:3]}" if missing else ""))
+
+check("每篇文章的阅读数不低于公式初值（只增不减）", not below_initial,
+      f"{len(below_initial)} 处异常" + (f"：{below_initial[:3]}" if below_initial else ""))
+
+# 反过来说明「为什么不能断言相等」：把当前值与初值的差值打印出来，
+# 让读的人直接看到「访问确实增加了它」。
+grew = sum(1 for i, (title, _t) in enumerate(ARTICLES)
+           if (v := db_map.get(make_slug_from_title(title))) is not None
+           and v > fake_view_count(i))
+check("阅读数确实会因访问而增长（证明它是运行时状态）", grew > 0,
+      f"{grew} 篇的阅读数高于种子初值 —— 这正是不能断言相等的原因")
 
 print()
 print("=" * 60)

@@ -46,6 +46,8 @@ OFFLINE_TESTS = [
     ("数据库 PRAGMA 与外键约束", "tests/test_foreign_keys.py"),
     ("N+1 查询守卫", "tests/test_n_plus_one.py"),
     ("种子数据确定性", "tests/test_seed_determinism.py"),
+    ("密码哈希与边界情况", "tests/test_password.py"),
+    ("登录流程与会话令牌", "tests/test_login_flow.py"),
 ]
 
 ONLINE_TESTS = [

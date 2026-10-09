@@ -15,8 +15,13 @@ pydantic-settings==2.7.0
 SQLAlchemy==2.0.36
 alembic==1.14.0
 
-# 密码哈希（bcrypt 4.x，passlib 1.7.4 与之兼容）
-passlib[bcrypt]==1.7.4
+# 密码哈希
+# 直接使用 bcrypt，不经 passlib。
+# passlib 1.7.4 发布于 2020 年且已停止维护，它在 bcrypt 4.x 上会持续报
+#     AttributeError: module 'bcrypt' has no attribute '__about__'
+# （bcrypt 4 移除了该属性）。哈希本身正确，但持续的已知警告会掩盖新问题，
+# 而且安全组件不宜依赖停止维护的中间层。
+# 直接调用只涉及 hashpw / checkpw 两个函数，包装层得不偿失。
 bcrypt==4.2.1
 
 # Markdown 渲染与 XSS 过滤（ADR-06：后端渲染成 HTML 存库）
@@ -29,8 +34,6 @@ tinycss2==1.5.1
 
 # 图片处理（ADR-02：应用层强制压缩并转 WebP）
 Pillow==11.0.0
-
-# Python 3.12 起 passlib 依赖的旧接口已移除，需要显式声明的兼容包由 pip 处理
 
 # ============================================================
 # 测试依赖

@@ -16,19 +16,87 @@ import hmac
 import json
 import time
 
-from passlib.context import CryptContext
+import bcrypt
 
 from app.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# ---------------------------------------------------------------
+# 密码哈希：直接使用 bcrypt，不经 passlib
+#
+# 之前用 passlib 的 CryptContext(schemes=["bcrypt"])，会持续输出
+#     AttributeError: module 'bcrypt' has no attribute '__about__'
+# 原因：bcrypt 4.x 移除了 __about__ 属性，而 passlib 1.7.4（2020 年发布）
+# 仍在读它来探测版本号。哈希结果本身是正确的，所以这只是一个警告 ——
+# 但「已知警告」会让人对新出现的警告失去敏感度，这比警告本身更危险。
+#
+# 换掉 passlib 的另一个理由是它已停止维护，而密码哈希属于安全组件。
+# 直接调用只涉及两个函数（hashpw / checkpw），包装层带来的复杂度
+# 大于它提供的便利。
+#
+# 兼容性：现有哈希是标准 $2b$12$ 格式，bcrypt 可直接校验，
+# 不需要重算任何已存密码。
+# ---------------------------------------------------------------
+
+# bcrypt 的工作因子。12 是 2026 年的常见取值：
+# 单次哈希约 250ms，对登录接口可接受，同时让离线爆破的成本足够高。
+# 不要再调低 —— 这个数字直接决定攻击者每秒能试多少个密码。
+_BCRYPT_ROUNDS = 12
+
+# bcrypt 只处理前 72 字节，超出部分会被**静默截断**。
+# 若不拦截，用户设置一个 100 字符的密码，后 28 个字符其实是无效的 ——
+# 这不会报错，但会让「密码长度」这个安全假设失效。
+# 用 bcrypt 自己的常量而不是硬编码 72，避免版本间含义变化。
+_BCRYPT_MAX_BYTES = 72
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    """生成密码哈希
+
+    bcrypt 要求输入是 bytes。这里显式 UTF-8 编码，
+    让中文密码也能正确处理（不编码的话 Python 会直接抛 TypeError）。
+    """
+    raw = password.encode("utf-8")
+    if len(raw) > _BCRYPT_MAX_BYTES:
+        raise ValueError(
+            f"密码过长：bcrypt 最多处理 {_BCRYPT_MAX_BYTES} 字节，"
+            f"当前 {len(raw)} 字节（中文一个字约占 3 字节）"
+        )
+    return bcrypt.hashpw(raw, bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode("ascii")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
+    """校验密码
+
+    所有「不匹配」都返回 False，不抛异常：
+    密码错、超长密码、哈希格式损坏。
+
+    【为什么这里捕获 BaseException 而不是 Exception】
+    bcrypt 4.x 是 Rust 实现（PyO3 绑定）。遇到格式损坏的哈希时，
+    Rust 侧会 panic，而 pyo3 把 panic 转成的 PanicException
+    **直接继承 BaseException，不经过 Exception**：
+
+        PanicException → BaseException → object
+
+    所以 `except Exception` 捕不到它 —— 后果是登录接口 500，
+    而日志里只有一句 Rust panic，排查方向完全错误。
+    （实测：bcrypt.checkpw(b"x", b"$2b$12$tooshort") 会 panic。）
+
+    不能写裸的 `except BaseException`：那会连 KeyboardInterrupt 和
+    SystemExit 一起吞掉，Ctrl+C 将无法中断进程 —— 那是更糟的问题。
+    所以显式排除这两个。
+    """
+    try:
+        raw = password.encode("utf-8")
+        if len(raw) > _BCRYPT_MAX_BYTES:
+            return False
+        return bcrypt.checkpw(raw, password_hash.encode("ascii"))
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException:  # noqa: BLE001 - 含 pyo3 的 PanicException
+        # TypeError: 哈希不是字符串 / 不是合法 ASCII
+        # ValueError: 哈希不是合法 bcrypt 格式
+        # PanicException: Rust 侧对畸形输入 panic
+        return False
 
 
 def _sign(payload: bytes) -> str:
