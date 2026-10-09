@@ -21,7 +21,11 @@ bcrypt==4.2.1
 
 # Markdown 渲染与 XSS 过滤（ADR-06：后端渲染成 HTML 存库）
 markdown-it-py==3.0.0
-nh3==0.2.20
+# gfm-like 预设开启 linkify 时必需，缺失会在渲染时抛 ModuleNotFoundError
+linkify-it-py==2.2.0
+# HTML 白名单过滤。注意：bleach 6 起不再自动安装 tinycss2
+bleach==6.2.0
+tinycss2==1.5.1
 
 # 图片处理（ADR-02：应用层强制压缩并转 WebP）
 Pillow==11.0.0

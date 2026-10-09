@@ -44,7 +44,63 @@
      └──── 文档线：定义 / 设计 / 接口 / 部署 / 变更记录 ────────┘
 ```
 
-当前进度：**阶段一（定义）与阶段二（设计）已完成，阶段三（实现与验证）已规划，待执行 M0。**
+## 当前进度
+
+阶段一（定义）与阶段二（设计）已完成，正在执行阶段三（实现与验证）。
+
+| 里程碑 | 内容 | 状态 |
+| --- | --- | --- |
+| M0 | 工程骨架：目录结构、依赖、数据库迁移、前端路由与代理 | ✅ 完成 |
+| M1 | 后端公开 API：8 个只读接口 + 种子数据 | ✅ 完成 |
+| M2 | 前端公开页面：列表 / 详情 / 标签 / 归档 / 搜索 | ⏳ 进行中 |
+| M3 | 鉴权与管理接口：登录、13 个后台接口 | 未开始 |
+| M4 | 管理后台页面 | 未开始 |
+| M5 | 部署：Docker Compose + Nginx + HTTPS | 未开始 |
+| M6 | 验收与交付 | 未开始 |
+
+## 开发
+
+### 后端
+
+```bash
+cd backend
+python -m venv .venv
+.venv/Scripts/activate          # Windows；Linux/macOS 用 source .venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env            # 按注释填入 SECRET_KEY 与 ADMIN_PASSWORD
+python -m alembic upgrade head  # 建表
+python -m app.init_db           # 写入站点配置与管理员账号
+python -m app.seed_data         # 可选：生成演示用种子数据
+python -m uvicorn app.main:app --reload
+```
+
+接口文档：<http://127.0.0.1:8000/docs>
+
+### 前端
+
+```bash
+cd frontend
+pnpm install
+pnpm dev                        # http://127.0.0.1:5173（已配置 /api 代理到 8000）
+```
+
+### 测试
+
+```bash
+cd backend
+python run_tests.py             # 不依赖服务的测试
+python run_tests.py --with-api  # 额外启动服务，跑接口端到端测试
+```
+
+**测试数据隔离**：接口测试跑在独立的 `data/db/blog_test.db` 上，跑完即删，
+**不会读写 `data/db/blog.db`**。单元测试（外键、N+1）一律使用内存数据库。
+
+> 这条隔离不是洁癖，而是踩过坑之后的补救：早期版本的 `test_foreign_keys.py`
+> 直接连开发库，并且为了验证级联删除而清空全部表 —— 它不会恢复原有数据。
+> 结果是每跑一次测试，开发数据就被清空一次，而报错现象却是别的测试
+> 报「列表为空 / total=0」，看起来像代码坏了。详见该文件顶部的说明。
+
 
 ## 许可证
 

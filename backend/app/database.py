@@ -9,12 +9,51 @@ SQLite 默认**不强制外键约束**，即使建表时写了 FOREIGN KEY。
 """
 
 from collections.abc import Generator
+from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import settings
+
+
+def resolve_sqlite_path(url: str) -> Path | None:
+    """把 sqlite URL 解析成绝对文件路径；非 sqlite 或内存库返回 None
+
+    为什么需要这个函数：
+    sqlite:///./data/db/blog.db 里的相对路径是按**进程当前工作目录**解析的。
+    从 backend/ 启动和从项目根启动，指向的是两个不同的文件 ——
+    而现象是「数据莫名其妙不见了」，极难排查。
+
+    统一解析成绝对路径之后，「用哪个库」只由配置决定，不再受 cwd 影响。
+    这个函数同时被 run_tests.py 用来判断「测试是不是正对着开发库跑」。
+    """
+    prefix = "sqlite:///"
+    if not url.startswith(prefix):
+        return None
+    raw = url[len(prefix):]
+    if not raw:
+        return None
+    # 内存库（sqlite:///:memory:）没有对应文件
+    if raw == ":memory:" or ":memory:" in raw:
+        return None
+    path = Path(raw)
+    return path.resolve() if path.is_absolute() else (Path.cwd() / path).resolve()
+
+
+def _ensure_parent_dir(url: str) -> None:
+    """确保数据库文件所在目录存在
+
+    首次 clone 仓库时 data/db/ 是不存在的（它在 .gitignore 里），
+    不建目录的话第二条语句就会报 unable to open database file。
+    """
+    path = resolve_sqlite_path(url)
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+
+_ensure_parent_dir(settings.database_url)
 
 # SQLite 需要关闭同线程检查，FastAPI 的依赖注入会在不同线程中复用连接
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
